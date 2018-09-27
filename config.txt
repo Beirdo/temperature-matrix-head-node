@@ -1,0 +1,10 @@
+# kernel 4.4.x+
+dtparam=spi=on
+dtoverlay=mcp2515-can0,oscillator=20000000,interrupt=25
+dtoverlay=spi1-1cs
+
+# Older kernels
+dtparam=spi=on
+dtoverlay=mcp2515-can0-overlay,oscillator=20000000,interrupt=25
+dtoverlay=spi-bcm2835-overlay
+
