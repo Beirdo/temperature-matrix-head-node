@@ -1,2 +1,5 @@
 python-can
 wiringpi
+numpy
+scipy
+mayavi
