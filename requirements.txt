@@ -3,3 +3,4 @@ wiringpi
 numpy
 scipy
 mayavi
+adafruit-io
