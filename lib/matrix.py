@@ -2,6 +2,7 @@
 
 import logging
 import time
+from threading import Lock
 
 from .gridmath import GridMath
 
@@ -22,6 +23,7 @@ class SensorNode(object):
 
 class Matrix(object):
     def __init__(self, sensors):
+        self.lock = Lock()
         self.sensorList = sensors
 
         self.forwardMap = {}
@@ -52,42 +54,45 @@ class Matrix(object):
         self.grid = None
 
     def setTemperature(self, boardNum, sensorNum, temperature, timestamp):
-        item = self.reverseMap.get(boardNum, {}).get(sensorNum, {})
-        if not item:
-            logger.warning("Unmapped sensor: board %02X, sensor %02X" %
-                           (boardNum, sensorNum))
-            return
+        with self.lock:
+            item = self.reverseMap.get(boardNum, {}).get(sensorNum, {})
+            if not item:
+                logger.warning("Unmapped sensor: board %02X, sensor %02X" %
+                               (boardNum, sensorNum))
+                return
 
-        item.temperature = temperature
-        item.timestamp = timestamp
+            item.temperature = temperature
+            item.timestamp = timestamp
 
     def getTemperature(self, x, y, z):
-        item = self.map.get(x, {}).get(y, {}).get(z, {})
-        if not item:
-            logger.warning("Unmapped sensor: (%s, %s, %s)" % (x, y, z))
-            return None
+        with self.lock:
+            item = self.map.get(x, {}).get(y, {}).get(z, {})
+            if not item:
+                logger.warning("Unmapped sensor: (%s, %s, %s)" % (x, y, z))
+                return None
 
-        if not item.timestamp:
-            return None
+            if not item.timestamp:
+                return None
 
-        age = time.time() - item.timestamp
-        if age > 60.0:
-            logger.warning("Temperature reading for (%s, %s, %s) "
-                           "aged out (%.3fs old)" % (x, y, z, age))
-            return None
+            age = time.time() - item.timestamp
+            if age > 60.0:
+                logger.warning("Temperature reading for (%s, %s, %s) "
+                               "aged out (%.3fs old)" % (x, y, z, age))
+                return None
 
-        return item.temperature
+            return item.temperature
 
     def getTemperatureGrid(self):
-        grid = [[[None] * self.zmax] * self.ymax] * self.xmax
+        with self.lock:
+            grid = [[[None] * self.zmax] * self.ymax] * self.xmax
 
-        for (x, itemX) in self.map.items():
-            for (y, itemY) in itemX.items():
-                for (z, itemZ) in itemY.items():
-                    grid[x][y][z] = item.temperature
-                
-        self.grid = grid
-        return grid
+            for (x, itemX) in self.map.items():
+                for (y, itemY) in itemX.items():
+                    for (z, itemZ) in itemY.items():
+                        grid[x][y][z] = item.temperature
+                    
+            self.grid = grid
+            return grid
 
     def getAggregateTemperature(self, func="arithmetic_mean", mode="z-slice",
                                 readings=None):
@@ -97,7 +102,7 @@ class Matrix(object):
             return None
 
         grid = self.grid
-        if grid is None
+        if grid is None:
             grid = self.getTemperatureGrid()
             readings = None
 
