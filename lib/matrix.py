@@ -3,6 +3,8 @@
 import logging
 import time
 
+from .gridmath import GridMath
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +21,35 @@ class SensorNode(object):
 
 
 class Matrix(object):
-    def __init__(self, mapping):
-        self.map = mapping
+    def __init__(self, sensors):
+        self.sensorList = sensors
 
+        self.forwardMap = {}
         self.reverseMap = {}
-        for (x, itemX) in item.items():
-            for (y, itemY) in itemX.items():
-                for (z, itemZ) in itemY.items():
-                    boardNum = item.boardNum
-                    sensorNum = item.sensorNum
-                    if boardNum not in self.reverseMap:
-                        self.reverseMap[boardNum] = {}
-                    self.reverseMap[boardNum][sensorMap] = itemZ
+
+        xmax = -1
+        ymax = -1
+        zmax = -1
+
+        for item in sensors:
+            if item.x not in self.forwardMap:
+                self.forwardMap[item.x] = {}
+            if item.y not in self.forwardMap[item.x]:
+                self.forwardMap[item.x][item.y] = {}
+            self.forwardMap[item.x][item.y][item.z] = item
+
+            if item.boardNum not in self.reverseMap:
+                self.reverseMap[item.boardNum] = {}
+            self.reverseMap[item.boardNum][item.sensorMap] = item
+
+            xmax = max(xmax, item.x)
+            ymax = max(ymax, item.y)
+            zmax = max(zmax, item.z)
+
+        self.xmax = xmax
+        self.ymax = ymax
+        self.zmax = zmax
+        self.grid = None
 
     def setTemperature(self, boardNum, sensorNum, temperature, timestamp):
         item = self.reverseMap.get(boardNum, {}).get(sensorNum, {})
@@ -60,39 +79,51 @@ class Matrix(object):
         return item.temperature
 
     def getTemperatureGrid(self):
-        return [[[self.getTemperature(x, y, z) for z in sorted(itemY.keys())]
-                 for (y, itemY) in sorted(itemX.items())]
-                for (x, itemX) in sorted(self.map.items())]
+        grid = [[[None] * self.zmax] * self.ymax] * self.xmax
 
+        for (x, itemX) in self.map.items():
+            for (y, itemY) in itemX.items():
+                for (z, itemZ) in itemY.items():
+                    grid[x][y][z] = item.temperature
+                
+        self.grid = grid
+        return grid
 
-    def getAverageTemperature(self, mode="z-slice"):
-        grid = self.getTemperatureGrid()
+    def getAggregateTemperature(self, func="arithmetic_mean", mode="z-slice",
+                                readings=None):
+        mathfunc = getattr(GridMath, func, None)
+        if not mathfunc or not hasattr(mathfunc, "__call__"):
+            logger.warning("Math function %s not defined" % func)
+            return None
 
-        xmax = len(grid)
-        ymax = max([len(y) for y in grid])
-        zmax = max([len(z) for y in grid for z in y])
+        grid = self.grid
+        if grid is None
+            grid = self.getTemperatureGrid()
+            readings = None
 
-        if mode == "x-slice":
-            readings = [[grid[x][y][z] for y in range(ymax)
-                         for z in range(zmax)] for x in range(xmax)]
-        elif mode == "y-slice":
-            readings = [[grid[x][y][z] for x in range(xmax)
-                         for z in range(zmax)] for y in range(ymax)]
-        elif mode == "z-slice":
-            readings = [[grid[x][y][z] for x in range(xmax)
-                         for y in range(ymax)] for z in range(zmax)]
-        else:
-            readings = [[grid[x][y][z] for x in range(xmax)
-                         for y in range(ymax) for z in range(zmax)]]
+        if readings is None:
+            if mode == "x-slice":
+                readings = [[grid[x][y][z] for y in range(self.ymax)
+                             for z in range(self.zmax)]
+                             for x in range(self.xmax)]
+            elif mode == "y-slice":
+                readings = [[grid[x][y][z] for x in range(self.xmax)
+                             for z in range(self.zmax)]
+                             for y in range(self.ymax)]
+            elif mode == "z-slice":
+                readings = [[grid[x][y][z] for x in range(self.xmax)
+                             for y in range(self.ymax)]
+                             for z in range(self.zmax)]
+            else:
+                readings = [[grid[x][y][z] for x in range(self.xmax)
+                             for y in range(self.ymax)
+                             for z in range(self.zmax)]]
 
-        readings = [list(filter(lambda x: x is not None, item))
-                    for item in readings]
-        sums = [sum(item) if item else None for item in readings]
-        counts = [len(item) if item else None for item in readings]
-        averages = [total / count if item is not None else none
-                    for (total, count) in zip(sums, counts)]
+            readings = [list(filter(lambda x: x is not None, item))
+                        for item in readings]
 
-        if len(averages) == 1:
-            averages = averages[0]
+        results = mathfunc(readings)
+        if len(results) == 1:
+            results = results[0]
+        return (readings, results)
 
-        return averages
